@@ -1,0 +1,271 @@
+﻿@inject IJSRuntime JS
+
+<div class="version">v@(RawVersion)</div>
+
+<main class="page">
+    <h1>China <span>vs</span> Gregoriaans</h1>
+    <p class="sub">Omrekenen tussen de Gregoriaanse kalender en de Chinese maan-zonnekalender (@MinDate.Year – @MaxDate.Year).</p>
+
+    <section class="card">
+        <h2>Chinese verjaardag</h2>
+        <div class="row">
+            <label>
+                Geboortedatum (Gregoriaans)
+                <input type="date" value="@birth.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                       min="@MinDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                       max="@MaxDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                       @onchange="OnBirthChanged" />
+            </label>
+            <label>
+                In jaar
+                <input type="number" min="@MinYear" max="@MaxYear" value="@bYear" @onchange="OnBYearChanged" />
+            </label>
+            <button @onclick="() => SetBYear(DateTime.Today.Year)">Dit jaar</button>
+        </div>
+        <p class="line">
+            Geboren @FormatGregorian(birth) = <span class="hanin">@MonthHan(bc.Month, bc.IsLeap)@DayHan(bc.Day)</span>
+            (@(bc.IsLeap ? "schrikkelmaand" : "maand") @bc.Month, dag @bc.Day) · jaar van de @Animal(bc.Branch) @AnimalEmoji(bc.Branch)
+        </p>
+        <div class="result">
+            <div class="emoji">🎂</div>
+            <div>
+                @{ var hits = LunarAnniversariesIn(bc, bYear); }
+                @if (hits.Count == 0)
+                {
+                    <div class="han">Geen Chinese verjaardag in @bYear</div>
+                }
+                @foreach (var h in hits)
+                {
+                    <div class="han">@FormatGregorian(h)</div>
+                }
+                <div class="line">Gregoriaanse verjaardag @bYear: @FormatGregorian(WesternBirthday(bYear))</div>
+            </div>
+        </div>
+        <div class="tablewrap">
+            <table class="ny">
+                <thead>
+                    <tr><th>Jaar</th><th>Chinese verjaardag</th><th>Gewone verjaardag</th><th>Verschil</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var y in Enumerable.Range(bYear, 10).Where(n => n <= MaxYear))
+                    {
+                        var west = WesternBirthday(y);
+                        var lunar = LunarAnniversariesIn(bc, y);
+                        <tr class="@(y == bYear ? "sel" : null)" @onclick="() => SetBYear(y)">
+                            <td>@y</td>
+                            <td>@(lunar.Count == 0 ? "–" : string.Join(" / ", lunar.Select(l => FormatGregorian(l))))</td>
+                            <td>@FormatGregorian(west)</td>
+                            <td>@(lunar.Count == 0 ? "" : string.Join(" / ", lunar.Select(l => DiffText((l - west).Days))))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="note">Valt de geboortedag op dag 30 of in een schrikkelmaand die dat jaar ontbreekt, dan geldt dag 29 resp. de gewone maand.</p>
+    </section>
+
+    <section class="card">
+        <h2>Gregoriaans → Chinees</h2>
+        <div class="row">
+            <label>
+                Datum
+                <input type="date" value="@greg.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                       min="@MinDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                       max="@MaxDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                       @onchange="OnGregChanged" />
+            </label>
+            <button @onclick="SetToday">Vandaag</button>
+        </div>
+        <p class="line">@FormatGregorian(greg)</p>
+        <div class="result">
+            <div class="emoji">@AnimalEmoji(cd.Branch)</div>
+            <div>
+                <div class="han">@(StemBranchHan(cd))年 @MonthHan(cd.Month, cd.IsLeap)@DayHan(cd.Day)</div>
+                <div class="line">Jaar van de <b>@Animal(cd.Branch)</b> · @Element(cd.Stem) · @YinYang(cd.Stem) · @StemBranchPinyin(cd)</div>
+                <div class="line">@(cd.IsLeap ? "Schrikkelmaand" : "Maand") @cd.Month, dag @cd.Day · Chinees jaar @HuangdiYear(cd.Year)</div>
+                <div class="line">Chinees Nieuwjaar: @FormatGregorian(NewYear(cd.Year))</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>Chinees → Gregoriaans</h2>
+        <div class="row">
+            <label>
+                Jaar
+                <input type="number" min="@MinYear" max="@MaxYear" value="@cYear" @onchange="OnCYearChanged" />
+            </label>
+            <label>
+                Maand
+                <select value="@MonthKey" @onchange="OnCMonthChanged">
+                    @foreach (var m in Enumerable.Range(1, 12))
+                    {
+                        <option value="@m">@m – @MonthHan(m, false)</option>
+                        @if (m == LeapOf)
+                        {
+                            <option value="@($"{m}L")">@m schrikkel – @MonthHan(m, true)</option>
+                        }
+                    }
+                </select>
+            </label>
+            <label>
+                Dag
+                <select value="@cDay" @onchange="OnCDayChanged">
+                    @foreach (var d in Enumerable.Range(1, CDays))
+                    {
+                        <option value="@d">@d – @DayHan(d)</option>
+                    }
+                </select>
+            </label>
+            <button @onclick="ShowAbove">Toon boven</button>
+        </div>
+        @if (CResult is DateTime r)
+        {
+            var info = FromGregorian(r);
+            <div class="result">
+                <div class="emoji">@AnimalEmoji(info.Branch)</div>
+                <div>
+                    <div class="han">@FormatGregorian(r)</div>
+                    <div class="line">Jaar van de <b>@Animal(info.Branch)</b> · @Element(info.Stem) · @StemBranchHan(info)</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="err">Deze Chinese datum bestaat niet.</p>
+        }
+        <p class="note">Jaar = Gregoriaans jaar waarin het Chinese jaar begint (Chinees Nieuwjaar).</p>
+    </section>
+
+    <section class="card">
+        <h2>Chinees Nieuwjaar</h2>
+        <div class="tablewrap">
+            <table class="ny">
+                <thead>
+                    <tr><th>Jaar</th><th>Nieuwjaar</th><th>Dier</th><th>Element</th><th>干支</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var y in TableYears)
+                    {
+                        var ny = NewYear(y);
+                        var info = FromGregorian(ny);
+                        <tr class="@(y == cd.Year ? "sel" : null)" @onclick="() => SetGregorian(ny)">
+                            <td>@y</td>
+                            <td>@FormatGregorian(ny, false)</td>
+                            <td>@AnimalEmoji(info.Branch) @Animal(info.Branch)</td>
+                            <td>@Element(info.Stem) (@YinYang(info.Stem))</td>
+                            <td>@StemBranchHan(info)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+@code {
+    private static readonly string RawVersion = typeof(CalendarApp).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";
+
+    // Default birthday; editable in the UI
+    private DateTime birth = new(1981, 11, 23);
+    private ChineseDate bc = FromGregorian(new DateTime(1981, 11, 23));
+    private int bYear = DateTime.Today.Year;
+
+    private DateTime greg;
+    private ChineseDate cd = null!;
+    private int cYear, cMonth, cDay;
+    private bool cLeap;
+
+    private string MonthKey => cLeap ? $"{cMonth}L" : cMonth.ToString(CultureInfo.InvariantCulture);
+    private int LeapOf => LeapMonthOf(cYear);
+    private int CDays => Math.Max(1, DaysInMonth(cYear, cMonth, cLeap));
+    private DateTime? CResult => ToGregorian(cYear, cMonth, cLeap, cDay);
+
+    private IEnumerable<int> TableYears => Enumerable.Range(Math.Clamp(cd.Year - 5, MinYear, MaxYear - 11), 12);
+
+    protected override void OnInitialized() => SetGregorian(DateTime.Today);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        // Start polling version.json for new deployments
+        try { await JS.InvokeVoidAsync("cgUpdater.start", RawVersion); }
+        catch (JSException) { }
+    }
+
+    private void SetToday() => SetGregorian(DateTime.Today);
+
+    private void OnBirthChanged(ChangeEventArgs e)
+    {
+        if (!DateTime.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)) return;
+        if (d < MinDate || d > MaxDate) return;
+        birth = d.Date;
+        bc = FromGregorian(birth);
+    }
+
+    private void OnBYearChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var y)) SetBYear(y);
+    }
+
+    private void SetBYear(int y) => bYear = Math.Clamp(y, MinYear, MaxYear);
+
+    // 29 Feb falls back to 28 Feb in non-leap years
+    private DateTime WesternBirthday(int year) =>
+        new(year, birth.Month, Math.Min(birth.Day, DateTime.DaysInMonth(year, birth.Month)));
+
+    private static string DiffText(int days) => days switch
+    {
+        0 => "zelfde dag",
+        > 0 => $"{days} dagen later",
+        _ => $"{-days} dagen eerder"
+    };
+
+    private void SetGregorian(DateTime d)
+    {
+        if (d < MinDate) d = MinDate;
+        else if (d > MaxDate) d = MaxDate;
+        greg = d.Date;
+        cd = FromGregorian(greg);
+        // Keep the reverse converter in sync
+        cYear = cd.Year;
+        cMonth = cd.Month;
+        cLeap = cd.IsLeap;
+        cDay = cd.Day;
+    }
+
+    private void OnGregChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+            SetGregorian(d);
+    }
+
+    private void OnCYearChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var y)) return;
+        cYear = Math.Clamp(y, MinYear, MaxYear);
+        if (cLeap && LeapOf != cMonth) cLeap = false;
+        ClampDay();
+    }
+
+    private void OnCMonthChanged(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString() ?? "1";
+        cLeap = s.EndsWith('L');
+        cMonth = int.Parse(s.TrimEnd('L'), CultureInfo.InvariantCulture);
+        ClampDay();
+    }
+
+    private void OnCDayChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var d)) cDay = d;
+    }
+
+    private void ClampDay() => cDay = Math.Min(cDay, CDays);
+
+    private void ShowAbove()
+    {
+        if (CResult is DateTime d) SetGregorian(d);
+    }
+}
